@@ -31,14 +31,21 @@
  *  B) instead of incrementing with one, each counter is incremented
  *  with the chosen prime number 107 to increase the blinking frequency.
  *
- *  Still missing:
- *  some input code for changing the colors with either uart or with 
- *  other inputs
+ *  Interface:
+ *  1. connect via uart
+ *  2. repeat: enter number 0..255, then the command.
+ *  if no number is input, the value will be zero
+ *  commands:
+ *  a..g - set led 0.. led 7 to value
+ *  o    - all off
+ *  s    - set all to value
+ *  m    - for future use
  */
 
 #include <util/delay.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include "ringuart.h"
 
 /*
  * counters with phase shifts
@@ -60,7 +67,141 @@ volatile uint8_t pwm_4 = 0;
 volatile uint8_t pwm_5 = 0;
 volatile uint8_t pwm_6 = 0;
 
+volatile uint16_t invalue = 0;
+volatile uint8_t mode = 0;
+
+uint8_t getinvalue() {
+	if (invalue > 255)
+		return 255;
+	uint8_t newval = invalue;
+	invalue = 0;
+	return newval;
+}
+void ok() {
+	txring_enqueue('o');
+	txring_enqueue('k');
+	txring_enqueue('\r');
+	txring_enqueue('\n');
+}
+
+void inparse() {
+	while (rxring_count()) {
+		uint8_t ch = rxring_dequeue();
+		uint8_t i = 0;
+		switch (ch) {
+		case '0':
+			invalue *= 10;
+			break;
+		case '1':
+			invalue *= 10;
+			invalue += 1;
+			break;
+		case '2':
+			invalue *= 10;
+			invalue += 2;
+			break;
+		case '3':
+			invalue *= 10;
+			invalue += 3;
+			break;
+		case '4':
+			invalue *= 10;
+			invalue += 4;
+			break;
+		case '5':
+			invalue *= 10;
+			invalue += 5;
+			break;
+		case '6':
+			invalue *= 10;
+			invalue += 6;
+			break;
+		case '7':
+			invalue *= 10;
+			invalue += 7;
+			break;
+		case '8':
+			invalue *= 10;
+			invalue += 8;
+			break;
+		case '9':
+			invalue *= 10;
+			invalue += 9;
+			break;
+		case 'a':
+		case 'A':
+			pwm_0 = getinvalue();
+			ok();
+			break;
+		case 'b':
+		case 'B':
+			pwm_1 = getinvalue();
+			ok();
+			break;
+		case 'c':
+		case 'C':
+			pwm_2 = getinvalue();
+			ok();
+			break;
+		case 'd':
+		case 'D':
+			pwm_3 = getinvalue();
+			ok();
+			break;
+		case 'e':
+		case 'E':
+			pwm_4 = getinvalue();
+			ok();
+			break;
+		case 'f':
+		case 'F':
+			pwm_5 = getinvalue();
+			ok();
+			break;
+		case 'g':
+		case 'G':
+			pwm_6 = getinvalue();
+			ok();
+			break;
+		case 'm':
+		case 'M':
+			mode = getinvalue();
+			ok();
+			break;
+		case 'o':
+		case 'O':
+			invalue = 0;
+			pwm_0 = 0;
+			pwm_1 = 0;
+			pwm_2 = 0;
+			pwm_3 = 0;
+			pwm_4 = 0;
+			pwm_5 = 0;
+			pwm_6 = 0;
+			ok();
+			break;
+		case 's':
+		case 'S':
+			i = getinvalue();
+			pwm_0 = i;
+			pwm_1 = i;
+			pwm_2 = i;
+			pwm_3 = i;
+			pwm_4 = i;
+			pwm_5 = i;
+			pwm_6 = i;
+			ok();
+			break;
+		default:
+			txring_enqueue('.');
+			break;
+		}
+	}
+
+}
+
 void setLED(uint8_t led, uint8_t value) {
+
 	switch (led) {
 	case 0:
 		pwm_0 = value;
@@ -110,43 +251,18 @@ void startPWM() {
 }
 
 int main(void) {
+	ringuartinit();
 	startPWM();
-	uint8_t counter = 0;
-	uint8_t selectedLED = 0;
-	uint8_t dir = 1;
 	while (1) {
-		counter++;
-		if (counter == 0) {
-			//overflow
-			if (dir) {
-				//return direction;
-				dir = 0;
-			} else {
-				dir = 1;
-				setLED(selectedLED, 0); //old led off
-				selectedLED++;
-				if (selectedLED > 6) {
-					selectedLED = 0;
-				}
-
-			}
-
-		}
-		if (dir) {
-			setLED(selectedLED, counter);
-		} else {
-			setLED(selectedLED, 255 - counter);
-
-		}
-		_delay_ms(1);
+		inparse();
 	}
 
 	return (0);
 }
-ISR (BADISR_vect) {
+ISR( BADISR_vect) {
 	PORTD |= (1 << PD4);
 }
-ISR (TIMER0_OVF_vect) {
+ISR( TIMER0_OVF_vect) {
 	uint8_t count;
 	count = count_0;
 	if (count < pwm_0) {
