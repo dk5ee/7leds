@@ -103,7 +103,7 @@ void startPWM() {
 	TCCR0A = 0;
 	TCCR0B = 0;
 
-	TCCR0B |= (1 << CS01);
+	TCCR0B |= (1 << CS00);
 	//set interrupt
 	TIMSK0 |= (1 << TOIE0);
 	sei();
@@ -138,7 +138,7 @@ int main(void) {
 			setLED(selectedLED, 255 - counter);
 
 		}
-		_delay_ms(4);
+		_delay_ms(1);
 	}
 
 	return (0);
