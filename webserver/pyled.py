@@ -6,32 +6,65 @@ from time import sleep
 import json
 from socketserver import ThreadingMixIn
 import threading
+import cv2
+from PIL import Image
+from io import BytesIO
 
 hostName = "localhost"
 proxyName = hostName  # "proxy.example.com"
 serverPort = 8080
 proxyPort = serverPort  # 80
 
-ser = serial.Serial('/dev/ttyUSB3', 9600)
-ser.isOpen()
+#serialport = None
 
+#videocapture = None
+
+image = None
+imagesize = 0
+
+imagecount = 0
+
+def getnewframe():
+    global image
+    global imagesize
+    global imagecount
+    ret, frame = videocapture.read()
+    if ret:
+        imagecount = imagecount + 1
+        dim = (160,100)
+        scaledimage = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
+        imageRGB=cv2.cvtColor(scaledimage,cv2.COLOR_BGR2RGB)
+        raw =  Image.fromarray(imageRGB)
+        tmpFile = BytesIO()
+        raw.save(tmpFile,'JPEG')
+        imagesize = tmpFile.getbuffer().nbytes
+        image = tmpFile.getvalue()
+                
+
+    else:
+        image = None
+
+def getframesinbackground():
+    while(1):
+        sleep(0.1)
+        getnewframe()
 
 def sendserial(name, value):
-    global ser
-    ser.write(value.encode())
-    ser.write(name.encode())
+    global serialport
+    serialport.write(value.encode())
+    serialport.write(name.encode())
 
 
 counter = 0
 changecounter = 0
 ledsdict = {
-  "white": {"name":"d", "value":0, "color":"#fff", "changed":0},
-  "nearUV": {"name":"f", "value":0, "color":"#30f", "changed":0},
-  "blue1": {"name":"a", "value":0, "color":"#00f", "changed":0},
-  "blue2": {"name":"c", "value":0, "color":"#00f", "changed":0},
-  "yellow": {"name":"b", "value":0, "color":"#ff0", "changed":0},
-  "green": {"name":"g", "value":0, "color":"#0f0", "changed":0},
-  "red": {"name":"e", "value":0, "color":"#f00", "changed":0}
+  "white": {"name":"d", "value":0, "color":"#fff", "changed":1},
+  "nearUV": {"name":"f", "value":0, "color":"#30f", "changed":1},
+  "blue1": {"name":"a", "value":0, "color":"#00f", "changed":1},
+  "blue2": {"name":"c", "value":0, "color":"#00f", "changed":1},
+  "yellow": {"name":"b", "value":0, "color":"#ff0", "changed":1},
+  "green": {"name":"g", "value":0, "color":"#0f0", "changed":1},
+  "red": {"name":"e", "value":0, "color":"#f00", "changed":1}
 }
 
 
@@ -50,14 +83,14 @@ def setled(ledname, newvalue):
     return 0
 
 
-block = 0;
+blockserial = 0;
 
 
-def sendleds():
-    global block
-    while (block > 0):
+def sendledstoUART():
+    global blockserial
+    while (blockserial > 0):
         sleep(0.01)
-    block = 1;
+    blockserial = 1;
     global ledsdict
     global changecounter
     changedvals = 0
@@ -70,8 +103,9 @@ def sendleds():
             sendserial(name, value)
             ledsdict[led]["changed"] = 0
             changedvals = changedvals + 1
-    block = 0;
+    blockserial = 0;
     return changedvals
+
 
 
 def outleds():
@@ -80,7 +114,7 @@ def outleds():
     for led in ledsdict:
         color = ledsdict[led]["color"]
         value = ledsdict[led]["value"]
-        line = bytes("<span style=\"background-color: %s\"><input type=\"range\" min=\"0\" max=\"255\" value=\"%s\" class=\"slider\" id=\"slider%s\"></span><span style=\"display: inline-block;width:6em;\">%s</span><br>\n" % (color, str(value), led, led), "utf-8")
+        line = bytes("<span style=\"background-color: %s\"><input type=\"range\" min=\"0\" max=\"255\" value=\"%s\" class=\"slider\" id=\"slider%s\"></span><span style=\"display: inline-blockserial;width:6em;\">%s</span><br>\n" % (color, str(value), led, led), "utf-8")
         returnvalue = returnvalue + line
     return returnvalue
 
@@ -156,18 +190,53 @@ def longpoll(self) :
     while (lastval == changecounter and sleepcount < 100):
         sleep(0.1)
         sleepcount = sleepcount + 1
-    self.send_response(200)
-    self.send_header("Content-type", "application/json")
-    self.end_headers()
-    self.wfile.write(bytes(json.dumps(ledsdict), "utf-8"))
+    try:
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(bytes(json.dumps(ledsdict), "utf-8"))
+    except BrokenPipeError:
+        pass
     return
 
+def oneimage(self):
+    global image
+    global imagesize
+    self.send_response(200)
+    self.send_header("Content-type", "image/jpeg")
+    self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
+    self.end_headers()
+    self.wfile.write( image )
+    self.wfile.flush()
+    return
 
 def videostream(self) :
+    global image
+    global imagesize
     self.send_response(200)
-    self.send_header("Content-type", "text/html")
+    self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=jpgboundary")
+    self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
     self.end_headers()
-    self.wfile.write(bytes("ok video", "utf-8"))
+    lastimagecount = imagecount
+    print ("streaming..")
+    goon= 1
+    while goon:
+        while (lastimagecount == imagecount):
+            sleep(0.05)
+        lastimagecount = imagecount
+        if (image is not None):
+            try:
+                self.wfile.write(bytes("--jpgboundary", "utf-8"))
+                #self.wfile.write(bytes("Content-Type: image/jpeg\n", "utf-8"))
+                #self.wfile.write(bytes("Content-Length: %d\n\n" %imagesize, "utf-8"))
+                
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", imagesize)
+                self.end_headers()
+                self.wfile.write( image )
+                #self.wfile.flush()
+            except BrokenPipeError:
+                goon = 0
     return
 
 
@@ -182,39 +251,37 @@ class MyServer(BaseHTTPRequestHandler):
         hasparam = 0
         hasasktoken = 0
         hasavideotoken = 0
+        hasaimagetoken = 0
         for param in params:
             hasparam = hasparam + setled(param, params[param][0])
             if param == "ask":
                 hasasktoken = 1
             if param == "video":
                 hasavideotoken = 1
+            if param == "image":
+                hasaimagetoken = 1
         if hasparam > 0:
             # print ("param recieved")
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            sendleds()
+            sendledstoUART()
             self.wfile.write(bytes("ok", "utf-8"))
         elif hasasktoken > 0:
-            # print ("ask")
             longpoll(self)
         elif hasavideotoken > 0:
-            print ("video")
             videostream(self)
+        elif hasaimagetoken > 0:
+            oneimage(self)
         else:
             # print ("no param recieved")
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(bytes("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>PYLED</title><link rel=\"icon\" href=\"https://bedah.de/tux.ico\" /></head>", "utf-8"))
-            self.wfile.write(bytes("<body>", "utf-8"))
-            # self.wfile.write(bytes("<div id=\"container\">oh</div>" , "utf-8"))
-            # self.wfile.write(bytes("<p>parts.scheme: %s</p>" % parts.scheme, "utf-8"))
-            # self.wfile.write(bytes("<p>parts.authority: %s</p>" % parts.authority, "utf-8"))
-            # self.wfile.write(bytes("<p>parts.getquerydict(): %s</p>" % parts.getquerydict(), "utf-8"))
-            # self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
+            self.wfile.write(bytes("<body style=\"color: #888;background-color: #000;\">", "utf-8"))
+            self.wfile.write(bytes("<div id=\"container\"><img src=\"/?video\" alt=\"\"></div>" , "utf-8"))
             counter = counter + 1
-            # self.wfile.write(bytes("<p>a counter: %d</p>" % counter, "utf-8"))
             self.wfile.write(outleds())
             self.wfile.write(outjs())
             self.wfile.write(bytes("</body></html>", "utf-8"))
@@ -225,8 +292,16 @@ class ThreadingSimpleServer(ThreadingMixIn, HTTPServer):
 
 
 if __name__ == "__main__":
+    global serialport
+    serialport =serial.Serial('/dev/ttyUSB3', 9600)
+    serialport.isOpen()
+    global videocapture
+    videocapture = cv2.VideoCapture(0)
+    if not videocapture.isOpened():
+        videocapture.open()
     server = ThreadingSimpleServer((hostName, serverPort), MyServer)
-    
+    videothread = threading.Thread(target=getframesinbackground, name="videothread")
+    videothread.start()
     print("Server started http://%s:%s" % (hostName, serverPort))
     try:
         server.serve_forever()
@@ -234,5 +309,6 @@ if __name__ == "__main__":
         pass
 
     server.server_close()
-    ser.close()
+    serialport.close()
+    videocapture.release()
     print("Server stopped.")
