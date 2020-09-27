@@ -226,9 +226,7 @@ def videostream(self) :
         lastimagecount = imagecount
         if (image is not None):
             try:
-                self.wfile.write(bytes("--jpgboundary", "utf-8"))
-                #self.wfile.write(bytes("Content-Type: image/jpeg\n", "utf-8"))
-                #self.wfile.write(bytes("Content-Length: %d\n\n" %imagesize, "utf-8"))
+                self.wfile.write(bytes("\n--jpgboundary\n", "utf-8"))
                 
                 self.send_header("Content-Type", "image/jpeg")
                 self.send_header("Content-Length", imagesize)
