@@ -238,7 +238,9 @@ function load(url, callback) {
 """ , "utf-8"))
         self.wfile.write(self.buildledsliders())
         self.wfile.write(self.buildjsstring())
-        self.wfile.write(bytes("</body></html>", "utf-8"))
+        self.wfile.write(bytes("""
+<a href="https://github.com/dk5ee/7leds/tree/master/webserver">dk5ee 7leds</a>
+</body></html>""", "utf-8"))
 
     def videostreamcallback(self):
         if self.goon:
