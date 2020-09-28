@@ -274,7 +274,7 @@ function load(url, callback) {
             self.sleepcount = self.sleepcount + 1
         if self.longpollwaiting:
             self.wfile.write(bytes(json.dumps(ledvalues.ledsdict), "utf-8"))
-        ledvalues.unsubscribe(self.longpollcallback)
+        #ledvalues.unsubscribe(self.longpollcallback)
         
     def videostreamcallback(self):
         if self.goon:
@@ -321,15 +321,16 @@ function load(url, callback) {
             self.oneimage()
         else:
             hasparam = 0
+            
             for param in params:
                 hasparam = hasparam + ledvalues.setled(param, params[param][0])
             if hasparam > 0:
+                ledvalues.trigger()
                 self.send_response(200)
                 self.send_header("Content-type", "text/html")
                 self.end_headers()
                 myserialport.sendledstoUART()
                 self.wfile.write(bytes("ok", "utf-8"))
-                ledvalues.trigger()
             else:
                 self.mainpage()
 
