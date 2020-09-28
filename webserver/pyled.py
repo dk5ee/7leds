@@ -42,7 +42,6 @@ class campictureclass:
     def subscribe(self, callback):
         if enableVideo:
             self.callbacks.append(callback)
-            print ("someone subscribed stream")
 
     def fire(self):
         for callback in self.callbacks:
@@ -50,7 +49,6 @@ class campictureclass:
                 callback()
             else:
                 self.callbacks.remove(callback)  # weird..
-                print ("someone left stream")
 
     def getnewframe(self):
         ret, frame = self.videocapture.read()
@@ -78,7 +76,7 @@ def getframesinbackground():
 class serialclass:
     blockserial = 0;
     serialport = None
-
+    
     def __init__(self):
         if enableSerial:
             self.serialport = serial.Serial('/dev/ttyUSB3', 9600)
@@ -96,7 +94,6 @@ class serialclass:
             self.serialport.write(name.encode())
 
     def sendledstoUART(self):
-        print("called")
         while (self.blockserial > 0):
             sleep(0.01) #todo this is ugly
         self.blockserial = 1;
@@ -106,7 +103,6 @@ class serialclass:
             changed = ledvalues.ledsdict[led]["changed"]
             name = ledvalues.ledsdict[led]["name"]
             if changed > 0:
-                ledvalues.changecounter = ledvalues.changecounter + 1
                 self.sendserial(name, value)
                 ledvalues.ledsdict[led]["changed"] = 0
                 changedvals = changedvals + 1
@@ -115,8 +111,7 @@ class serialclass:
 
 
 class ledvaluesclass:
-    counter = 0
-    changecounter = 0
+    changed = 0
     ledsdict = {
       "white": {"name":"d", "value":0, "color":"#fff", "changed":1},
       "nearUV": {"name":"f", "value":0, "color":"#30f", "changed":1},
@@ -126,6 +121,20 @@ class ledvaluesclass:
       "green": {"name":"g", "value":0, "color":"#0f0", "changed":1},
       "red": {"name":"e", "value":0, "color":"#f00", "changed":1}
     }
+    callbacks=[]
+    def subscribe(self, callback):
+        self.callbacks.append(callback)
+    def unsubscribe(self, callback):
+        if callback in self.callbacks:
+            self.callbacks.remove(callback)
+    def trigger(self):
+        if self.changed:
+            self.changed = 0
+            for callback in self.callbacks:
+                if callable(callback):
+                    if not self.changed:
+                        callback()
+                self.callbacks.remove(callback)  # weird..
 
     def setled(self, ledname, newvalue):
         lednameasc = str(ledname)
@@ -134,25 +143,9 @@ class ledvaluesclass:
             if oldvalue != newvalue:
                 self.ledsdict[lednameasc]["value"] = str(newvalue)
                 self.ledsdict[lednameasc]["changed"] = 1
+                self.changed = 1;
             return 1
         return 0
-
-
-def longpoll(self) :
-    lastval = ledvalues.changecounter
-    sleepcount = 0
-    while (lastval == ledvalues.changecounter and sleepcount < 100):
-        sleep(0.2) # todo: implement observer or event
-        sleepcount = sleepcount + 1
-    try:
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(bytes(json.dumps(ledvalues.ledsdict), "utf-8"))
-    except BrokenPipeError:
-        pass
-    return
-
 
 class MyServer(BaseHTTPRequestHandler):
 
@@ -167,49 +160,57 @@ var geturl = url + "?" +name+ "=" +value;
 Http.open("GET", geturl);
 Http.send();
 }
+var slidermap= new Map();
 """ % url, "utf-8")
         for led in ledvalues.ledsdict:
             # color = ledsdict[led]["color"]
             # name = ledsdict[led]["name"]
             returnvalue = returnvalue + bytes("""
+slidermap["slider%s"] = true;
 var slider%s = document.getElementById("slider%s");
 slider%s.oninput = function() { sendvalue("%s",this.value); }
-""" % (led, led, led, led), "utf-8")
+slider%s.onmousedown = function() { 
+    slidermap["slider%s"] = false;
+}
+slider%s.onmouseup = function() { 
+    slidermap["slider%s"] = true;
+}
+""" % (led, led, led, led,led, led, led, led,led), "utf-8")
         returnvalue = returnvalue + bytes("""
 var running = 1;
+
 setInterval(function(){
     if (running) {
-    load("/ask", function(Http) { 
-        data=JSON.parse(Http.responseText);
+    load("/ask", function(response) { 
+        data=JSON.parse(response);
         for (const name in data) {
             if (data.hasOwnProperty(name)) {
                 entry = data[name];
-                if (entry.hasOwnProperty('value'))
+                if (entry.hasOwnProperty('value') && slidermap["slider"+name] )
                    document.getElementById("slider"+name).value = entry['value']
             }
         } 
     });
     }
-}, 100);
-function load(url, callback) {  
+}, 10);
+function load(url, callback) {
     running = 0;
-    const Http = new XMLHttpRequest(); 
+    const Http = new XMLHttpRequest();
     Http.timeout = 50000;
-    Http.onreadystatechange = ensureReadiness;  
+    Http.onreadystatechange = stateChange;
     Http.ontimeout = function (e) {
-    running = 0;
     document.getElementById('container').innerHTML = "lost connection"
 };
-    function ensureReadiness() {  
-        if(Http.readyState < 4) {  return; }  
-        if(Http.status !== 200) {  return; }  
+    function stateChange() {
+        if(Http.readyState < 4) {  return; }
+        if(Http.status !== 200) {  return; }
         if(Http.readyState === 4) {
-            callback(Http);
+            callback(Http.responseText);
             running = 1;
-        }             
-    }  
-    Http.open("GET", url);  
-    Http.send();  
+        }
+    }
+    Http.open("GET", url);
+    Http.send();
 }
 """, "utf-8")
         returnvalue = returnvalue + bytes("""
@@ -218,7 +219,9 @@ function load(url, callback) {
         return returnvalue
 
     def buildledsliders(self):
-        returnvalue = b"\n";
+        returnvalue =bytes("""
+<div >
+""" , "utf-8")
         for led in ledvalues.ledsdict:
             color = ledvalues.ledsdict[led]["color"]
             value = ledvalues.ledsdict[led]["value"]
@@ -229,6 +232,9 @@ function load(url, callback) {
 <span style="display: inline-blockserial;width:6em;">%s</span>
 <br>\n""" % (color, str(value), led, led), "utf-8")
             returnvalue = returnvalue + line
+        returnvalue = returnvalue +bytes("""
+</div>
+""" , "utf-8")
         return returnvalue
 
     def mainpage(self):
@@ -241,7 +247,7 @@ function load(url, callback) {
     <title>PYLED</title>
     <link rel="shortcut icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////////////////c9/7/KMn7/wK7+v8ClNn/AqPt/yNXfv8Cufn/Aq3q/wKx+P8CgMz/XJO8/7Gxsv/DxMT//////////////////v///6fz/v9Prsj/G3Kd/yNujP81Qk3/KGBx/x9XeP8gXnj/Y5m0/93m6//s7Oz/7u7u////////////z8/P//X19f+psrr/c42j/3GMo/99kaH/g5Gd/32Mmf9zgYz/bXV7/29ydf+Li4z/9vb2/8PDw////////////1FRUf+Bg4X/u8LI/8fP1//ByM7/tLm+/7C1uf+nrLD/naOo/5qgpP+YnJ//k5WW/3V1df8WFhb///////////88PDz/tLS1//b4+f/u8fP/9/j6/+rs7v/d3uD/tba3/7Cys/+trrD/qKmq/6Chov8zMzP/Ghoa////////////aGho/5OTk//5+vr/7e7v/+Dh4v/P0NH/q6ys/6Chof+wsbL/w8TF/7W2t/+dnp//FhYW/0NDQ////////////+np6f9OTk7/6+zt/8rKy/+bnJ3/a3iC/1dtgP9rcXb/ioqL/62trv/Cw8T/XFxd/ygoKP/Ozs7/////////////////YWFh/9PT0/9xv93/EWqT/wBIeP8AH4f/Ajln/xJPf/9GiLr/v8DB/zg4OP9WVlb/////////////////+Pj4/4SEhP//////2/3//132//8C7/7/ANX8/wGu/v9SwPj/uNbp/+Hj5P+6u7z/GRoa//j4+P///////////9fX1/+0tLX///////////9NTk7/bLS4/07s/v9gi6D/WFpc//n6+//r7O3/3t/g/ysrK//V1dX////////////f39//sbGx////////////vLy8/+np6f//////4ODg/729vf///////Pz8/+Pk5f8rKyz/3t7e/////////////v7+/4OEhP/////////////////////////////////////////////////Ozs//Kisr//7+/v////////////////+JiYr/tra2////////////8PDw/39/f//z8/P////////////o6Oj/QEBA/4CAgP//////////////////////9vb2/0RERP9UVFT/aGho/ygoKf8UFBT/Kioq/21tbf9oaGj/JCQk/z09Pv/19fX////////////////////////////s7Oz/UVFR/xkaGv8YGBj/FxcX/xgYGP8ZGRn/Ghoa/05OTv/r6+v///////////////////////////////////////z8/P+5ubn/cXFx/0BBQf9AQED/cXFx/7i4uP/8/Pz/////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" />
 </head>
-<body style="color: #888;background-color: #000;">""" , "utf-8"))
+<body style="color: #888;background-color: #000;" >""" , "utf-8"))
         if enableVideo:
             self.wfile.write(bytes("<div id=\"container\"><img src=\"/video\" alt=""></div>", "utf-8"))
         self.wfile.write(self.buildledsliders())
@@ -250,6 +256,26 @@ function load(url, callback) {
 <a href="https://github.com/dk5ee/7leds/tree/master/webserver">dk5ee 7leds</a>
 </body></html>""", "utf-8"))
 
+    def longpollcallback(self):
+        self.longpollwaiting=0;
+        try:
+            self.wfile.write(bytes(json.dumps(ledvalues.ledsdict), "utf-8"))
+        except BrokenPipeError:
+            pass
+    def longpoll(self) :
+        self.longpollwaiting = 1
+        self.sleepcount = 0
+        ledvalues.subscribe(self.longpollcallback)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        while (self.longpollwaiting and self.sleepcount < 20):
+            sleep(1) 
+            self.sleepcount = self.sleepcount + 1
+        if self.longpollwaiting:
+            self.wfile.write(bytes(json.dumps(ledvalues.ledsdict), "utf-8"))
+        ledvalues.unsubscribe(self.longpollcallback)
+        
     def videostreamcallback(self):
         if self.goon:
             try:
@@ -290,7 +316,7 @@ function load(url, callback) {
         if (mypath == "/video" and enableVideo):
             self.videostream()
         elif (mypath == "/ask"):
-            longpoll(self)
+            self.longpoll()
         elif (mypath == "/image" and enableVideo):
             self.oneimage()
         else:
@@ -303,7 +329,7 @@ function load(url, callback) {
                 self.end_headers()
                 myserialport.sendledstoUART()
                 self.wfile.write(bytes("ok", "utf-8"))
-            
+                ledvalues.trigger()
             else:
                 self.mainpage()
 
