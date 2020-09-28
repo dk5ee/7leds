@@ -15,58 +15,78 @@ hostName = "localhost"
 serverPort = 8080
 proxyAddress = "http://localhost:8080/"
 
+
 class campictureclass:
     image = None
     imagesize = 0
     imagecount = 0
     videocapture = None
-    
+    callbacks = []
+
     def __init__(self):
         self.videocapture = cv2.VideoCapture(0)
         if not self.videocapture.isOpened():
             self.videocapture.open()
         print ("camera connected")
+        self.callbacks = []
+
     def __del__(self):
         self.videocapture.release()
         print ("camera disconnected")
-    def addobserver(self):
-        pass
-    def removeobserver(self):
-        pass
+
+    def subscribe(self, callback):
+        self.callbacks.append(callback)
+        print ("someone subscribed stream")
+
+    def fire(self):
+        for callback in self.callbacks:
+            if callable(callback):
+                callback()
+            else:
+                self.callbacks.remove(callback)  # weird..
+                print ("someone left stream")
+
     def getnewframe(self):
         ret, frame = self.videocapture.read()
         if ret:
             self.imagecount = self.imagecount + 1
-            dim = (320,200)
+            dim = (320, 200)
             scaledimage = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
-            imageRGB=cv2.cvtColor(scaledimage,cv2.COLOR_BGR2RGB)
-            raw =  Image.fromarray(imageRGB)
+            imageRGB = cv2.cvtColor(scaledimage, cv2.COLOR_BGR2RGB)
+            raw = Image.fromarray(imageRGB)
             tmpFile = BytesIO()
-            raw.save(tmpFile,'JPEG')
+            raw.save(tmpFile, 'JPEG')
             self.imagesize = tmpFile.getbuffer().nbytes
             self.image = tmpFile.getvalue()
+            self.fire()
         else:
             self.image = None
 
+
 def getframesinbackground():
     while(1):
-        sleep(0.1)
+        sleep(0.2)
         campicture.getnewframe()
+
 
 class serialclass:
     blockserial = 0;
     serialport = None
+
     def __init__(self):
-        self.serialport =serial.Serial('/dev/ttyUSB3', 9600)
+        self.serialport = serial.Serial('/dev/ttyUSB3', 9600)
         self.serialport.isOpen()
         print ("serial opened")
+
     def __del__(self):
         self.serialport.close()
         print ("serial closed")
+
     def sendserial(self, name, value):
         if self.serialport is not None:
             self.serialport.write(value.encode())
             self.serialport.write(name.encode())
+
     def sendledstoUART(self):
         print("called")
         while (self.blockserial > 0):
@@ -85,6 +105,7 @@ class serialclass:
         self.blockserial = 0;
         return changedvals
 
+
 class ledvaluesclass:
     counter = 0
     changecounter = 0
@@ -97,11 +118,8 @@ class ledvaluesclass:
       "green": {"name":"g", "value":0, "color":"#0f0", "changed":1},
       "red": {"name":"e", "value":0, "color":"#f00", "changed":1}
     }
-    def addobserver(self):
-        pass
-    def removeobserver(self):
-        pass
-    def setled(self,ledname, newvalue):
+
+    def setled(self, ledname, newvalue):
         lednameasc = str(ledname)
         if lednameasc in self.ledsdict:
             oldvalue = self.ledsdict[lednameasc]["value"]
@@ -111,23 +129,28 @@ class ledvaluesclass:
             return 1
         return 0
 
-def outleds():
-    returnvalue = b"\n";
-    for led in ledvalues.ledsdict:
-        color = ledvalues.ledsdict[led]["color"]
-        value = ledvalues.ledsdict[led]["value"]
-        line = bytes("""
-<span style="background-color: %s">
-    <input type="range" min="0" max="255" value="%s" class="slider" id="slider%s" style="width: 512px;">
-</span>
-<span style="display: inline-blockserial;width:6em;">%s</span>
-<br>\n""" % (color, str(value), led, led), "utf-8")
-        returnvalue = returnvalue + line
-    return returnvalue
 
-def outjs():
-    url = str(proxyAddress)
-    returnvalue = bytes ("""
+def longpoll(self) :
+    lastval = ledvalues.changecounter
+    sleepcount = 0
+    while (lastval == ledvalues.changecounter and sleepcount < 100):
+        sleep(0.2)
+        sleepcount = sleepcount + 1
+    try:
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(bytes(json.dumps(ledvalues.ledsdict), "utf-8"))
+    except BrokenPipeError:
+        pass
+    return
+
+
+class MyServer(BaseHTTPRequestHandler):
+
+    def buildjsstring(self):
+        url = str(proxyAddress)
+        returnvalue = bytes ("""
 <script>
 function sendvalue(name, value) {
 const Http = new XMLHttpRequest();
@@ -137,14 +160,14 @@ Http.open("GET", geturl);
 Http.send();
 }
 """ % url, "utf-8")
-    for led in ledvalues.ledsdict:
-        # color = ledsdict[led]["color"]
-        # name = ledsdict[led]["name"]
-        returnvalue = returnvalue + bytes("""
+        for led in ledvalues.ledsdict:
+            # color = ledsdict[led]["color"]
+            # name = ledsdict[led]["name"]
+            returnvalue = returnvalue + bytes("""
 var slider%s = document.getElementById("slider%s");
 slider%s.oninput = function() { sendvalue("%s",this.value); }
-""" % (led, led,led, led), "utf-8")
-    returnvalue = returnvalue + bytes("""
+""" % (led, led, led, led), "utf-8")
+        returnvalue = returnvalue + bytes("""
 var running = 1;
 setInterval(function(){
     if (running) {
@@ -181,38 +204,25 @@ function load(url, callback) {
     Http.send();  
 }
 """, "utf-8")
-    returnvalue = returnvalue + bytes("""
+        returnvalue = returnvalue + bytes("""
 </script>
     """, "utf-8")
-    return returnvalue
+        return returnvalue
 
+    def buildledsliders(self):
+        returnvalue = b"\n";
+        for led in ledvalues.ledsdict:
+            color = ledvalues.ledsdict[led]["color"]
+            value = ledvalues.ledsdict[led]["value"]
+            line = bytes("""
+<span style="background-color: %s">
+    <input type="range" min="0" max="255" value="%s" class="slider" id="slider%s" style="width: 512px;">
+</span>
+<span style="display: inline-blockserial;width:6em;">%s</span>
+<br>\n""" % (color, str(value), led, led), "utf-8")
+            returnvalue = returnvalue + line
+        return returnvalue
 
-def longpoll(self) :
-    lastval = ledvalues.changecounter
-    sleepcount = 0
-    while (lastval == ledvalues.changecounter and sleepcount < 100):
-        sleep(0.1)
-        sleepcount = sleepcount + 1
-    try:
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(bytes(json.dumps(ledvalues.ledsdict), "utf-8"))
-    except BrokenPipeError:
-        pass
-    return
-
-def oneimage(self):
-    self.send_response(200)
-    self.send_header("Content-type", "image/jpeg")
-    self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
-    self.end_headers()
-    self.wfile.write( campicture.image )
-    self.wfile.flush()
-    return
-
-
-class MyServer(BaseHTTPRequestHandler):
     def mainpage(self):
         self.send_response(200)
         self.send_header("Content-type", "text/html")
@@ -226,45 +236,44 @@ class MyServer(BaseHTTPRequestHandler):
 <body style="color: #888;background-color: #000;">
 <div id="container"><img src="/video" alt=""></div>
 """ , "utf-8"))
-        self.wfile.write(outleds())
-        self.wfile.write(outjs())
+        self.wfile.write(self.buildledsliders())
+        self.wfile.write(self.buildjsstring())
         self.wfile.write(bytes("</body></html>", "utf-8"))
+
+    def videostreamcallback(self):
+        if self.goon:
+            try:
+                self.wfile.write(bytes("\n--jpgboundary\n", "utf-8"))  # todo: check the linebreaks
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", campicture.imagesize)
+                self.end_headers()
+                self.wfile.write(campicture.image)
+                self.wfile.flush()
+            except BrokenPipeError:
+                self.goon = 0
+
     def videostream(self):
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=jpgboundary")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
         self.end_headers()
-        lastimagecount = campicture.imagecount
-        print ("streaming..")
-        goon= 1
-        while goon:
-            while (lastimagecount == campicture.imagecount):
-                sleep(0.05)
-            lastimagecount = campicture.imagecount
-            if (campicture.image is not None):
-                try:
-                    self.wfile.write(bytes("\n--jpgboundary\n", "utf-8"))
-                    #self.wfile.write(bytes("Content-Type: image/jpeg\n", "utf-8"))
-                    #self.wfile.write(bytes("Content-Length: %d\n\n" %imagesize, "utf-8"))
-                    
-                    self.send_header("Content-Type", "image/jpeg")
-                    self.send_header("Content-Length", campicture.imagesize)
-                    self.end_headers()
-                    self.wfile.write( campicture.image )
-                    #self.wfile.flush()
-                except BrokenPipeError:
-                    goon = 0
+        campicture.subscribe(self.videostreamcallback)
+        self.goon = 1
+        while self.goon:
+            sleep(1.0)
+
     def oneimage(self):
         self.send_response(200)
         self.send_header("Content-type", "image/jpeg")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
         self.end_headers()
-        self.wfile.write( campicture.image )
+        self.wfile.write(campicture.image)
         self.wfile.flush()
+
     def do_GET(self):
         parts = urisplit(self.path)
         params = parts.getquerydict()
-        uriparts=urlparse(self.path)
+        uriparts = urlparse(self.path)
         mypath = uriparts.path
         if (mypath == "/video"):
             self.videostream()
