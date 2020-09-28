@@ -11,6 +11,9 @@ import cv2
 from PIL import Image
 from io import BytesIO
 
+enableSerial = 1
+enableVideo = 1
+
 hostName = "localhost"
 serverPort = 8080
 proxyAddress = "http://localhost:8080/"
@@ -24,19 +27,22 @@ class campictureclass:
     callbacks = []
 
     def __init__(self):
-        self.videocapture = cv2.VideoCapture(0)
-        if not self.videocapture.isOpened():
-            self.videocapture.open()
-        print ("camera connected")
+        if enableVideo:
+            self.videocapture = cv2.VideoCapture(0)
+            if not self.videocapture.isOpened():
+                self.videocapture.open()
+            print ("camera connected")
         self.callbacks = []
 
     def __del__(self):
-        self.videocapture.release()
-        print ("camera disconnected")
+        if enableVideo:
+            self.videocapture.release()
+            print ("camera disconnected")
 
     def subscribe(self, callback):
-        self.callbacks.append(callback)
-        print ("someone subscribed stream")
+        if enableVideo:
+            self.callbacks.append(callback)
+            print ("someone subscribed stream")
 
     def fire(self):
         for callback in self.callbacks:
@@ -64,7 +70,7 @@ class campictureclass:
 
 
 def getframesinbackground():
-    while(1):
+    while(enableVideo): # todo: find better way instead of polling
         sleep(0.2)
         campicture.getnewframe()
 
@@ -74,23 +80,25 @@ class serialclass:
     serialport = None
 
     def __init__(self):
-        self.serialport = serial.Serial('/dev/ttyUSB3', 9600)
-        self.serialport.isOpen()
-        print ("serial opened")
+        if enableSerial:
+            self.serialport = serial.Serial('/dev/ttyUSB3', 9600)
+            self.serialport.isOpen()
+            print ("serial opened")
 
     def __del__(self):
-        self.serialport.close()
-        print ("serial closed")
+        if enableSerial:
+            self.serialport.close()
+            print ("serial closed")
 
     def sendserial(self, name, value):
-        if self.serialport is not None:
+        if enableSerial and self.serialport is not None:
             self.serialport.write(value.encode())
             self.serialport.write(name.encode())
 
     def sendledstoUART(self):
         print("called")
         while (self.blockserial > 0):
-            sleep(0.01)
+            sleep(0.01) #todo this is ugly
         self.blockserial = 1;
         changedvals = 0
         for led in ledvalues.ledsdict:
@@ -134,7 +142,7 @@ def longpoll(self) :
     lastval = ledvalues.changecounter
     sleepcount = 0
     while (lastval == ledvalues.changecounter and sleepcount < 100):
-        sleep(0.2)
+        sleep(0.2) # todo: implement observer or event
         sleepcount = sleepcount + 1
     try:
         self.send_response(200)
@@ -233,9 +241,9 @@ function load(url, callback) {
     <title>PYLED</title>
     <link rel="shortcut icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////////////////c9/7/KMn7/wK7+v8ClNn/AqPt/yNXfv8Cufn/Aq3q/wKx+P8CgMz/XJO8/7Gxsv/DxMT//////////////////v///6fz/v9Prsj/G3Kd/yNujP81Qk3/KGBx/x9XeP8gXnj/Y5m0/93m6//s7Oz/7u7u////////////z8/P//X19f+psrr/c42j/3GMo/99kaH/g5Gd/32Mmf9zgYz/bXV7/29ydf+Li4z/9vb2/8PDw////////////1FRUf+Bg4X/u8LI/8fP1//ByM7/tLm+/7C1uf+nrLD/naOo/5qgpP+YnJ//k5WW/3V1df8WFhb///////////88PDz/tLS1//b4+f/u8fP/9/j6/+rs7v/d3uD/tba3/7Cys/+trrD/qKmq/6Chov8zMzP/Ghoa////////////aGho/5OTk//5+vr/7e7v/+Dh4v/P0NH/q6ys/6Chof+wsbL/w8TF/7W2t/+dnp//FhYW/0NDQ////////////+np6f9OTk7/6+zt/8rKy/+bnJ3/a3iC/1dtgP9rcXb/ioqL/62trv/Cw8T/XFxd/ygoKP/Ozs7/////////////////YWFh/9PT0/9xv93/EWqT/wBIeP8AH4f/Ajln/xJPf/9GiLr/v8DB/zg4OP9WVlb/////////////////+Pj4/4SEhP//////2/3//132//8C7/7/ANX8/wGu/v9SwPj/uNbp/+Hj5P+6u7z/GRoa//j4+P///////////9fX1/+0tLX///////////9NTk7/bLS4/07s/v9gi6D/WFpc//n6+//r7O3/3t/g/ysrK//V1dX////////////f39//sbGx////////////vLy8/+np6f//////4ODg/729vf///////Pz8/+Pk5f8rKyz/3t7e/////////////v7+/4OEhP/////////////////////////////////////////////////Ozs//Kisr//7+/v////////////////+JiYr/tra2////////////8PDw/39/f//z8/P////////////o6Oj/QEBA/4CAgP//////////////////////9vb2/0RERP9UVFT/aGho/ygoKf8UFBT/Kioq/21tbf9oaGj/JCQk/z09Pv/19fX////////////////////////////s7Oz/UVFR/xkaGv8YGBj/FxcX/xgYGP8ZGRn/Ghoa/05OTv/r6+v///////////////////////////////////////z8/P+5ubn/cXFx/0BBQf9AQED/cXFx/7i4uP/8/Pz/////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" />
 </head>
-<body style="color: #888;background-color: #000;">
-<div id="container"><img src="/video" alt=""></div>
-""" , "utf-8"))
+<body style="color: #888;background-color: #000;">""" , "utf-8"))
+        if enableVideo:
+            self.wfile.write(bytes("<div id=\"container\"><img src=\"/video\" alt=""></div>", "utf-8"))
         self.wfile.write(self.buildledsliders())
         self.wfile.write(self.buildjsstring())
         self.wfile.write(bytes("""
@@ -255,40 +263,41 @@ function load(url, callback) {
                 self.goon = 0
 
     def videostream(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=jpgboundary")
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
-        self.end_headers()
-        campicture.subscribe(self.videostreamcallback)
-        self.goon = 1
-        while self.goon:
-            sleep(1.0)
+        if enableVideo:
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=jpgboundary")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
+            self.end_headers()
+            campicture.subscribe(self.videostreamcallback)
+            self.goon = enableVideo
+            while self.goon:
+                sleep(1.0) # todo: ugly, again
 
     def oneimage(self):
-        self.send_response(200)
-        self.send_header("Content-type", "image/jpeg")
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
-        self.end_headers()
-        self.wfile.write(campicture.image)
-        self.wfile.flush()
+        if enableVideo:
+            self.send_response(200)
+            self.send_header("Content-type", "image/jpeg")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0")
+            self.end_headers()
+            self.wfile.write(campicture.image)
+            self.wfile.flush()
 
     def do_GET(self):
         parts = urisplit(self.path)
         params = parts.getquerydict()
         uriparts = urlparse(self.path)
         mypath = uriparts.path
-        if (mypath == "/video"):
+        if (mypath == "/video" and enableVideo):
             self.videostream()
         elif (mypath == "/ask"):
             longpoll(self)
-        elif (mypath == "/image"):
+        elif (mypath == "/image" and enableVideo):
             self.oneimage()
         else:
             hasparam = 0
             for param in params:
                 hasparam = hasparam + ledvalues.setled(param, params[param][0])
             if hasparam > 0:
-                # print ("param recieved")
                 self.send_response(200)
                 self.send_header("Content-type", "text/html")
                 self.end_headers()
