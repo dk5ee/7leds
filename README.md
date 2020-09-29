@@ -1,6 +1,17 @@
 
 ## LEDs with Software PWM
 
+Y-axis: Time; X-axis: PWM-value
+
+#### Normal Hardware PWM
+![Normal PWM](/images/distribution_standardPWM.png)
+#### SoftwarePWM, with prime distribution
+![Normal PWM](/images/distribution_prime107.png)
+#### Delta Modulation/DPCM distribution
+![Normal PWM](/images/distribution_DPCM.png)
+
+### Content of Repository
+
 This repository comprises of this parts: 
 1. Code for AVR Microcontroller to light up attached LEDs
 2. Code for sending commands to the Microcontroller
