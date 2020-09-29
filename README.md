@@ -1,12 +1,12 @@
 
-##LEDs with Software PWM
+## LEDs with Software PWM
 
 This repository comprises of this parts: 
 1. Code for AVR Microcontroller to light up attached LEDs
 2. Code for sending commands to the Microcontroller
 3. Extra design files
 
-###Microcontroller Code
+### Microcontroller Code
 
 Atmega328 modules with optiboot/arduino bootlader and USB serial are used.
 
@@ -22,6 +22,6 @@ for further experiments:
 
 the main.c in "code3" uses 16 bit generation with  "prime"-algorithm for just one LED/output
 
-###Command Code
+### Command Code
 
 A Python Project in "webserver" allows commanding the controller over webinterface
