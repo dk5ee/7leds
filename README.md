@@ -1,7 +1,7 @@
 
 ## LEDs with Software PWM
 
-Y-axis: Time; X-axis: PWM-value
+X-axis: Time; Y-axis: PWM-value
 
 #### Normal Hardware PWM
 ![Normal PWM](/images/distribution_standardPWM.png)
